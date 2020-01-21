@@ -1,139 +1,118 @@
+"""
+Usage:
+# Create train data:
+python xml_to_csv.py -i [PATH_TO_IMAGES_FOLDER]/train -o [PATH_TO_ANNOTATIONS_FOLDER]/train_labels.csv
+
+# Create test data:
+python xml_to_csv.py -i [PATH_TO_IMAGES_FOLDER]/test -o [PATH_TO_ANNOTATIONS_FOLDER]/test_labels.csv
+"""
+
 import os
 import glob
 import pandas as pd
+import argparse
 import xml.etree.ElementTree as ET
 
-# module level variables ##############################################################################################
-# train and test directories
-TRAINING_IMAGES_DIR = os.getcwd() + "/data/images/train/"
-TEST_IMAGES_DIR = os.getcwd() + "/data/images/test/"
 
-MIN_NUM_IMAGES_REQUIRED_FOR_TRAINING = 10
-MIN_NUM_IMAGES_SUGGESTED_FOR_TRAINING = 100
-
-MIN_NUM_IMAGES_REQUIRED_FOR_TESTING = 3
-
-# output .csv file names/locations
-TRAINING_DATA_DIR = os.getcwd() + "/" + "training_data"
-TRAIN_CSV_FILE_LOC = TRAINING_DATA_DIR + "/" + "train_labels.csv"
-EVAL_CSV_FILE_LOC = TRAINING_DATA_DIR + "/" + "eval_labels.csv"
-
-#######################################################################################################################
-def main():
-    if not checkIfNecessaryPathsAndFilesExist():
-        return
-    # end if
-
-    # if the training data directory does not exist, create it
-    try:
-        if not os.path.exists(TRAINING_DATA_DIR):
-            os.makedirs(TRAINING_DATA_DIR)
-        # end if
-    except Exception as e:
-        print("unable to create directory " + TRAINING_DATA_DIR + "error: " + str(e))
-    # end try
-
-
-    # convert training xml data to a single .csv file
-    print("converting xml training data . . .")
-    trainCsvResults = xml_to_csv(TRAINING_IMAGES_DIR)
-    trainCsvResults.to_csv(TRAIN_CSV_FILE_LOC, index=None)
-    print("training xml to .csv conversion successful, saved result to " + TRAIN_CSV_FILE_LOC)
-
-    # convert test xml data to a single .csv file
-    print("converting xml test data . . .")
-    testCsvResults = xml_to_csv(TEST_IMAGES_DIR)
-    testCsvResults.to_csv(EVAL_CSV_FILE_LOC, index=None)
-    print("test xml to .csv conversion successful, saved result to " + EVAL_CSV_FILE_LOC)
-
-# end main
-
-#######################################################################################################################
-def checkIfNecessaryPathsAndFilesExist():
-    if not os.path.exists(TRAINING_IMAGES_DIR):
-        print('')
-        print('ERROR: the training images directory "' + TRAINING_IMAGES_DIR + '" does not seem to exist')
-        print('Did you set up the training images?')
-        print('')
-        return False
-    # end if
-
-    # get a list of all the .jpg / .xml file pairs in the training images directory
-    trainingImagesWithAMatchingXmlFile = []
-    for fileName in os.listdir(TRAINING_IMAGES_DIR):
-        if fileName.endswith(".jpg"):
-            xmlFileName = os.path.splitext(fileName)[0] + ".xml"
-            if os.path.exists(os.path.join(TRAINING_IMAGES_DIR, xmlFileName)):
-                trainingImagesWithAMatchingXmlFile.append(fileName)
-            # end if
-        # end if
-    # end for
-
-    # show an error and return false if there are no images in the training directory
-    if len(trainingImagesWithAMatchingXmlFile) <= 0:
-        print("ERROR: there don't seem to be any images and matching XML files in " + TRAINING_IMAGES_DIR)
-        print("Did you set up the training images?")
-        return False
-    # end if
-
-    # show an error and return false if there are not at least 10 images and 10 matching XML files in TRAINING_IMAGES_DIR
-    if len(trainingImagesWithAMatchingXmlFile) < MIN_NUM_IMAGES_REQUIRED_FOR_TRAINING:
-        print("ERROR: there are not at least " + str(MIN_NUM_IMAGES_REQUIRED_FOR_TRAINING) + " images and matching XML files in " + TRAINING_IMAGES_DIR)
-        print("Did you set up the training images?")
-        return False
-    # end if
-
-    # show a warning if there are not at least 100 images and 100 matching XML files in TEST_IMAGES_DIR
-    if len(trainingImagesWithAMatchingXmlFile) < MIN_NUM_IMAGES_SUGGESTED_FOR_TRAINING:
-        print("WARNING: there are not at least " + str(MIN_NUM_IMAGES_SUGGESTED_FOR_TRAINING) + " images and matching XML files in " + TRAINING_IMAGES_DIR)
-        print("At least " + str(MIN_NUM_IMAGES_SUGGESTED_FOR_TRAINING) + " image / xml pairs are recommended for bare minimum acceptable results")
-        # note we do not return false here b/c this is a warning, not an error
-    # end if
-
-    if not os.path.exists(TEST_IMAGES_DIR):
-        print('ERROR: TEST_IMAGES_DIR "' + TEST_IMAGES_DIR + '" does not seem to exist')
-        return False
-    # end if
-
-    # get a list of all the .jpg / .xml file pairs in the test images directory
-    testImagesWithAMatchingXmlFile = []
-    for fileName in os.listdir(TEST_IMAGES_DIR):
-        if fileName.endswith(".jpg"):
-            xmlFileName = os.path.splitext(fileName)[0] + ".xml"
-            if os.path.exists(os.path.join(TEST_IMAGES_DIR, xmlFileName)):
-                testImagesWithAMatchingXmlFile.append(fileName)
-            # end if
-        # end if
-    # end for
-
-    # show an error and return false if there are not at least 3 images and 3 matching XML files in TEST_IMAGES_DIR
-    if len(testImagesWithAMatchingXmlFile) <= 3:
-        print("ERROR: there are not at least " + str(MIN_NUM_IMAGES_REQUIRED_FOR_TESTING) + " image / xml pairs in " + TEST_IMAGES_DIR)
-        print("Did you separate out the test image / xml pairs from the training image / xml pairs?")
-        return False
-    # end if
-
-    return True
-# end function
-
-#######################################################################################################################
 def xml_to_csv(path):
+    """Iterates through all .xml files (generated by labelImg) in a given directory and combines them in a single Pandas datagrame.
+
+    Parameters:
+    ----------
+    path : {str}
+        The path containing the .xml files
+    Returns
+    -------
+    Pandas DataFrame
+        The produced dataframe
+    """
+    classes_names = []
     xml_list = []
-    for xml_file in glob.glob(path + '/*.xml'):
+    for xml_file in glob.glob(path + "/*.xml"):
         tree = ET.parse(xml_file)
         root = tree.getroot()
-        for member in root.findall('object'):
-            value = (root.find('filename').text, int(root.find('size')[0].text), int(root.find('size')[1].text), member[0].text,
-                     int(member[4][0].text), int(member[4][1].text), int(member[4][2].text), int(member[4][3].text))
+        for member in root.findall("object"):
+            classes_names.append(member[0].text)
+            value = (
+                root.find("filename").text,
+                int(root.find("size")[0].text),
+                int(root.find("size")[1].text),
+                member[0].text,
+                int(member[4][0].text),
+                int(member[4][1].text),
+                int(member[4][2].text),
+                int(member[4][3].text),
+            )
             xml_list.append(value)
-        # end for
-    # end for
-
-    column_name = ['filename', 'width', 'height', 'class', 'xmin', 'ymin', 'xmax', 'ymax']
+    column_name = [
+        "filename",
+        "width",
+        "height",
+        "class",
+        "xmin",
+        "ymin",
+        "xmax",
+        "ymax",
+    ]
     xml_df = pd.DataFrame(xml_list, columns=column_name)
-    return xml_df
-# end function
+    classes_names = list(set(classes_names))
+    classes_names.sort()
+    return xml_df, classes_names
 
-#######################################################################################################################
+
+def main():
+    # Initiate argument parser
+    parser = argparse.ArgumentParser(
+        description="Sample TensorFlow XML-to-CSV converter"
+    )
+    parser.add_argument(
+        "-i",
+        "--inputDir",
+        help="Path to the folder where the input .xml files are stored",
+        type=str,
+    )
+    parser.add_argument(
+        "-o", "--outputFile", help="Name of output .csv file (including path)", type=str
+    )
+
+    parser.add_argument(
+        "-l",
+        "--labelMapDir",
+        help="Directory path to save label_map.pbtxt file is specified.",
+        type=str,
+        default="",
+    )
+
+    args = parser.parse_args()
+
+    if args.inputDir is None:
+        args.inputDir = os.getcwd()
+    if args.outputFile is None:
+        args.outputFile = args.inputDir + "/labels.csv"
+
+    assert os.path.isdir(args.inputDir)
+    os.makedirs(os.path.dirname(args.outputFile), exist_ok=True)
+    xml_df, classes_names = xml_to_csv(args.inputDir)
+    xml_df.to_csv(args.outputFile, index=None)
+    print("Successfully converted xml to csv.")
+    if args.labelMapDir:
+        os.makedirs(args.labelMapDir, exist_ok=True)
+        label_map_path = os.path.join(args.labelMapDir, "label_map.pbtxt")
+        print("Generate `{}`".format(label_map_path))
+
+        # Create the `label_map.pbtxt` file
+        pbtxt_content = ""
+        for i, class_name in enumerate(classes_names):
+            pbtxt_content = (
+                pbtxt_content
+                + "item {{\n    id: {0}\n    name: '{1}'\n}}\n\n".format(
+                    i + 1, class_name
+                )
+            )
+        pbtxt_content = pbtxt_content.strip()
+        with open(label_map_path, "w") as f:
+            f.write(pbtxt_content)
+
+
 if __name__ == "__main__":
     main()
